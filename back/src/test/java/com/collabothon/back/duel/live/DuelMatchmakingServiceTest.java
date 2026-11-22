@@ -1,5 +1,6 @@
 package com.collabothon.back.duel.live;
 
+import com.collabothon.back.config.DuelProperties;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -32,6 +33,9 @@ class DuelMatchmakingServiceTest {
 
 	private static final PlayerCardDto CARD_B = new PlayerCardDto("Elena Petrova", "f3", Map.of());
 
+	static final DuelProperties PROPERTIES = new DuelProperties(6, 10_000L, 60_000L, 4.0, 12_000L, 20_000L, 25_000L,
+			20_000L, 25_000L, 1000L, 4000L, 15_000L);
+
 	DuelStartService matches = mock(DuelStartService.class);
 
 	DuelLiveNotifier notifier = mock(DuelLiveNotifier.class);
@@ -44,7 +48,7 @@ class DuelMatchmakingServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		matchmaking = new DuelMatchmakingService(matches, notifier, timers, clock);
+		matchmaking = new DuelMatchmakingService(matches, notifier, timers, clock, PROPERTIES);
 		when(matches.startLive(anyString(), anyString(), anyList())).thenAnswer(call -> new LiveMatch(1, 2,
 				call.getArgument(0), call.getArgument(1), CARD_A, CARD_B, call.getArgument(2)));
 	}

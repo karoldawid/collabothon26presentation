@@ -21,30 +21,33 @@ type Props = {
   search?: MatchSearch;
 };
 
-const SEARCH_SECONDS = 15;
+/** Until the server says how long it searches (`queued`), the ring shows its default. */
+const DEFAULT_SEARCH_MS = 15_000;
 const RING_SIZE = 64;
 const RING_STROKE = 4;
+/** The dashed circle's border; the countdown ring sits over it, on the same centre. */
+const SEARCH_BORDER = 2;
 const RING_RADIUS = (RING_SIZE - RING_STROKE) / 2;
 const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
 
-/** Seconds left of the server's 15 s search; the full 15 until the server confirms it queued us. */
-function useSecondsLeft(deadline: number | null): number {
+/** Seconds left of the server's search; the whole search until the server confirms it queued us. */
+function useSecondsLeft(deadline: number | null, total: number): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (deadline === null) return;
     const id = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(id);
   }, [deadline]);
-  if (deadline === null) return SEARCH_SECONDS;
-  return Math.max(0, Math.min(SEARCH_SECONDS, Math.ceil((deadline - now) / 1000)));
+  if (deadline === null) return total;
+  return Math.max(0, Math.min(total, Math.ceil((deadline - now) / 1000)));
 }
 
 /** The countdown ring where the rival's avatar will appear. */
-function SearchRing({ secondsLeft }: { secondsLeft: number }) {
-  const progress = secondsLeft / SEARCH_SECONDS;
+function SearchRing({ secondsLeft, total }: { secondsLeft: number; total: number }) {
+  const progress = secondsLeft / total;
   return (
     <View style={styles.rivalSearchCircle} testID="matchmaking-ring" accessibilityLabel={`${secondsLeft} seconds left`}>
-      <Svg width={RING_SIZE} height={RING_SIZE} style={StyleSheet.absoluteFill}>
+      <Svg width={RING_SIZE} height={RING_SIZE} style={styles.ring}>
         <Circle
           cx={RING_SIZE / 2}
           cy={RING_SIZE / 2}
@@ -68,7 +71,8 @@ function SearchRing({ secondsLeft }: { secondsLeft: number }) {
 
 /** Matchmaking view while searching for a rival (Figma 157:3800). */
 export function MatchmakingView({ state, youAvatar, onCancel, search }: Props) {
-  const secondsLeft = useSecondsLeft(search?.phase === 'searching' ? search.deadline : null);
+  const total = Math.round((search?.searchMs ?? DEFAULT_SEARCH_MS) / 1000);
+  const secondsLeft = useSecondsLeft(search?.phase === 'searching' ? search.deadline : null, total);
   const categoriesText = state.categories
     .map((c) => getStoryCategoryMeta(c).name)
     .join(', ');
@@ -119,7 +123,7 @@ export function MatchmakingView({ state, youAvatar, onCancel, search }: Props) {
             <Text style={styles.vsText}>VS</Text>
           </View>
           {search?.phase === 'searching' && search.deadline !== null ? (
-            <SearchRing secondsLeft={secondsLeft} />
+            <SearchRing secondsLeft={secondsLeft} total={total} />
           ) : (
             <View style={styles.rivalSearchCircle}>
               <ActivityIndicator size="small" color={colors.brandAccent} />
@@ -172,15 +176,17 @@ const styles = StyleSheet.create({
     color: colors.textOnAccent,
   },
   rivalSearchCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    borderWidth: 2,
+    width: RING_SIZE,
+    height: RING_SIZE,
+    borderRadius: RING_SIZE / 2,
+    borderWidth: SEARCH_BORDER,
     borderColor: colors.brandAccent,
     borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // Absolute children start inside the border; pulled back by it, the ring shares the dashed circle's centre.
+  ring: { position: 'absolute', top: -SEARCH_BORDER, left: -SEARCH_BORDER },
   ringSeconds: {
     ...type.labelStrong,
     color: colors.textOnBrand,

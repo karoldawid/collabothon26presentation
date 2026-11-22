@@ -25,7 +25,7 @@ const POLL_INTERVAL_MS = 1000;
 const FINDING_RIVAL_MS = 1500;
 /** How long to wait for the live socket to open before falling back to the simulated rival. */
 const SOCKET_OPEN_WAIT_MS = 3000;
-/** Upper bound for the whole live search; the server answers `no-rival` after 15 s. */
+/** Upper bound for the whole live search; the server answers `no-rival` after its queue timeout (15 s by default). */
 const LIVE_SEARCH_MAX_MS = 20_000;
 /** How long the "Rival found!" versus intro stays up before the first question. */
 const MATCHED_INTRO_MS = 1800;
@@ -43,6 +43,8 @@ export type MatchSearch = {
   phase: 'searching' | 'matched' | 'fallback';
   /** Epoch ms when the server gives up searching (the countdown ring); null until `queued`. */
   deadline: number | null;
+  /** The server's whole search time in ms, from `queued`; null until then. */
+  searchMs: number | null;
   rival: PlayerCard | null;
 };
 
@@ -69,7 +71,7 @@ export function useDuelMatch({
   reloadMatchId,
 }: UseDuelMatchParams): UseDuelMatchResult {
   const { userId, deviceId } = useCurrentUser();
-  const [search, setSearch] = useState<MatchSearch>({ phase: 'searching', deadline: null, rival: null });
+  const [search, setSearch] = useState<MatchSearch>({ phase: 'searching', deadline: null, searchMs: null, rival: null });
   const searchWaiterRef = useRef<((message: DuelSocketMessage) => void) | null>(null);
   const [sessionKey, setSessionKey] = useState(0);
   const [state, dispatch] = useReducer(duelReducer, undefined, () => {
@@ -155,7 +157,7 @@ export function useDuelMatch({
     onMessage: handleSocketMessage,
   });
 
-  /** Queues for a live rival; resolves with the match, `no-rival` after the server's 15 s, or `unavailable`. */
+  /** Queues for a live rival; resolves with the match, `no-rival` after the server's queue timeout, or `unavailable`. */
   const findLiveRival = useCallback(async (): Promise<LiveSearchResult> => {
     if (!(await socketWaitForOpen(SOCKET_OPEN_WAIT_MS))) return { kind: 'unavailable' };
     return new Promise<LiveSearchResult>((resolve) => {
@@ -167,7 +169,7 @@ export function useDuelMatch({
       const timer = setTimeout(() => finish({ kind: 'no-rival' }), LIVE_SEARCH_MAX_MS);
       searchWaiterRef.current = (message) => {
         if (message.type === 'queued') {
-          setSearch((s) => ({ ...s, deadline: Date.now() + message.timeoutMs }));
+          setSearch((s) => ({ ...s, deadline: Date.now() + message.timeoutMs, searchMs: message.timeoutMs }));
         } else if (message.type === 'matched') {
           finish({ kind: 'matched', matchId: message.matchId, rival: message.rival });
         } else if (message.type === 'no-rival') {
@@ -233,7 +235,7 @@ export function useDuelMatch({
         const live = await findLiveRival();
         if (cancelled) return;
         if (live.kind === 'matched') {
-          setSearch({ phase: 'matched', deadline: null, rival: live.rival });
+          setSearch({ phase: 'matched', deadline: null, searchMs: null, rival: live.rival });
           try {
             const [matchState] = await Promise.all([
               api<MatchState>(`/api/duel/matches/${live.matchId}/state?userId=${encodeURIComponent(userId)}`),
@@ -404,7 +406,7 @@ export function useDuelMatch({
   }, [userId]);
 
   const retry = useCallback(() => {
-    setSearch({ phase: 'searching', deadline: null, rival: null });
+    setSearch({ phase: 'searching', deadline: null, searchMs: null, rival: null });
     dispatch({ type: 'ui.clearError' });
     setSessionKey((k) => k + 1);
   }, []);

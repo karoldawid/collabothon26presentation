@@ -19,7 +19,7 @@ const rival = { name: 'Elena Petrova', avatar: 'f3' as const, levels: { berlin: 
 describe('MatchmakingView', () => {
   it('searching: shows the 15 s countdown ring and Cancel', async () => {
     const onCancel = jest.fn();
-    const search: MatchSearch = { phase: 'searching', deadline: Date.now() + 15_000, rival: null };
+    const search: MatchSearch = { phase: 'searching', deadline: Date.now() + 15_000, searchMs: 15_000, rival: null };
     const r = await render(<MatchmakingView state={state} youAvatar="m1" onCancel={onCancel} search={search} />);
 
     expect(r.getByTestId('matchmaking-title').props.children).toContain('Searching for rival');
@@ -30,8 +30,16 @@ describe('MatchmakingView', () => {
     expect(onCancel).toHaveBeenCalled();
   });
 
+  it('searching: the ring counts down the search time the server sent', async () => {
+    const search: MatchSearch = { phase: 'searching', deadline: Date.now() + 5_000, searchMs: 5_000, rival: null };
+    const r = await render(<MatchmakingView state={state} youAvatar="m1" onCancel={jest.fn()} search={search} />);
+
+    expect(Number(r.getByTestId('matchmaking-seconds').props.children)).toBe(5);
+    expect(r.getByTestId('matchmaking-ring').props.accessibilityLabel).toBe('5 seconds left');
+  });
+
   it('searching before the server confirms the queue: spinner instead of a ring', async () => {
-    const search: MatchSearch = { phase: 'searching', deadline: null, rival: null };
+    const search: MatchSearch = { phase: 'searching', deadline: null, searchMs: null, rival: null };
     const r = await render(<MatchmakingView state={state} youAvatar="m1" onCancel={jest.fn()} search={search} />);
 
     expect(r.queryByTestId('matchmaking-ring')).toBeNull();
@@ -39,7 +47,7 @@ describe('MatchmakingView', () => {
   });
 
   it('matched: "Rival found!" with the rival name and the LIVE badge', async () => {
-    const search: MatchSearch = { phase: 'matched', deadline: null, rival };
+    const search: MatchSearch = { phase: 'matched', deadline: null, searchMs: null, rival };
     const r = await render(<MatchmakingView state={state} youAvatar="m1" onCancel={jest.fn()} search={search} />);
 
     expect(r.getByTestId('matchmaking-matched')).toBeTruthy();
@@ -50,7 +58,7 @@ describe('MatchmakingView', () => {
   });
 
   it('no-rival (simulated start): keeps the plain searching look with no error', async () => {
-    const search: MatchSearch = { phase: 'fallback', deadline: null, rival: null };
+    const search: MatchSearch = { phase: 'fallback', deadline: null, searchMs: null, rival: null };
     const r = await render(<MatchmakingView state={state} youAvatar="m1" onCancel={jest.fn()} search={search} />);
 
     expect(r.getByTestId('matchmaking-title').props.children).toContain('Searching for rival');

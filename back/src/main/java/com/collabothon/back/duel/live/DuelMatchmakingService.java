@@ -1,6 +1,7 @@
 package com.collabothon.back.duel.live;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
@@ -8,6 +9,7 @@ import java.util.SequencedMap;
 
 import org.springframework.stereotype.Service;
 
+import com.collabothon.back.config.DuelProperties;
 import com.collabothon.back.duel.consts.DuelConsts;
 import com.collabothon.back.duel.consts.DuelSocketConsts;
 import com.collabothon.back.duel.services.DuelStartService;
@@ -29,6 +31,8 @@ public class DuelMatchmakingService {
 	private final DuelTimers timers;
 
 	private final Clock clock;
+
+	private final DuelProperties properties;
 
 	/** Waiting players by user id, in queue order; guarded by {@code this}. */
 	private final SequencedMap<String, WaitingPlayer> queue = new LinkedHashMap<>();
@@ -65,8 +69,8 @@ public class DuelMatchmakingService {
 	}
 
 	private void awaitRival(WaitingPlayer player) {
-		timers.schedule(() -> expire(player), DuelSocketConsts.QUEUE_TIMEOUT);
-		notifier.send(player.userId(), DuelSocketMessages.queued(DuelSocketConsts.QUEUE_TIMEOUT.toMillis()));
+		timers.schedule(() -> expire(player), queueTimeout());
+		notifier.send(player.userId(), DuelSocketMessages.queued(properties.queueTimeoutMs()));
 	}
 
 	private void expire(WaitingPlayer player) {
@@ -77,7 +81,7 @@ public class DuelMatchmakingService {
 
 	private synchronized boolean removeIfExpired(WaitingPlayer player) {
 		if (!player.equals(queue.get(player.userId()))
-				|| clock.instant().isBefore(player.queuedAt().plus(DuelSocketConsts.QUEUE_TIMEOUT))) {
+				|| clock.instant().isBefore(player.queuedAt().plus(queueTimeout()))) {
 			return false;
 		}
 		queue.remove(player.userId());
@@ -105,6 +109,11 @@ public class DuelMatchmakingService {
 			return first;
 		}
 		return common;
+	}
+
+
+	private Duration queueTimeout() {
+		return Duration.ofMillis(properties.queueTimeoutMs());
 	}
 
 }

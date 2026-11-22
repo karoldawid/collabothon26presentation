@@ -6,8 +6,6 @@ public final class DuelSocketConsts {
 
 	public static final String PATH = "/ws/duel";
 
-	public static final Duration QUEUE_TIMEOUT = Duration.ofSeconds(15);
-
 	public static final Duration DISCONNECT_GRACE = Duration.ofSeconds(10);
 
 	public static final int SEND_TIME_LIMIT_MS = 5_000;

@@ -44,7 +44,11 @@ public record DuelProperties(
 		long botMinDelayMs,
 		@PositiveOrZero
 		@DefaultValue("4000")
-		long botMaxDelayMs) {
+		long botMaxDelayMs,
+		/** How long a player waits in the live queue before the simulated rival takes over. */
+		@Positive
+		@DefaultValue("15000")
+		long queueTimeoutMs) {
 
 	@AssertTrue(message = "app.duel.bot-max-delay-ms must not be below app.duel.bot-min-delay-ms")
 	public boolean isBotDelayRangeValid() {
