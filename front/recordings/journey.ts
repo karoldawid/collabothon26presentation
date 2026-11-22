@@ -79,9 +79,10 @@ const MIN_SCROLL_MS = 600;
 
 /**
  * Scrolls the nearest scrolling ancestor of `target` slowly (eased), after a short look at the screen.
- * `center` brings the target to the middle of the view, `end` scrolls that container to its bottom.
+ * `center` brings the target to the middle of the view, `end` scrolls that container to its bottom. `pxPerS` is the
+ * speed, the slow reading one by default.
  */
-export async function glide(page: Page, target: Locator, align: 'center' | 'end' = 'center') {
+export async function glide(page: Page, target: Locator, align: 'center' | 'end' = 'center', pxPerS = SCROLL_PX_PER_S) {
   await page.waitForTimeout(SETTLE_MS);
   await target.evaluate(
     (el, { align, pxPerS, minMs }) =>
@@ -108,7 +109,7 @@ export async function glide(page: Page, target: Locator, align: 'center' | 'end'
         };
         requestAnimationFrame(frame);
       }),
-    { align, pxPerS: SCROLL_PX_PER_S, minMs: MIN_SCROLL_MS },
+    { align, pxPerS, minMs: MIN_SCROLL_MS },
   );
 }
 
@@ -126,7 +127,21 @@ export async function tap(page: Page, testId: string, before = 500) {
   if (!(await onScreen(target))) await glide(page, target);
   await beat(page, before);
   await act(page);
-  await target.click();
+  await press(page, target);
+}
+
+/**
+ * Clicks the middle of the target like a finger, when nothing covers it there. Playwright's own click first scrolls
+ * the target into view, and that also scrolls containers a finger cannot: the Atlas tab pager (overflow hidden,
+ * every tab side by side) would slide 20 px sideways and stay there.
+ */
+async function press(page: Page, target: Locator) {
+  const box = await target.boundingBox();
+  const x = box ? box.x + box.width / 2 : 0;
+  const y = box ? box.y + box.height / 2 : 0;
+  const hit = box ? await target.evaluate((el, { x, y }) => el.contains(document.elementFromPoint(x, y)), { x, y }) : false;
+  if (hit) await page.mouse.click(x, y);
+  else await target.click();
 }
 
 /**
@@ -221,8 +236,8 @@ const visible = (page: Page, testId: string) => page.getByTestId(testId).filter(
 const LESSON_TIMEOUT_MS = 8 * 60_000;
 
 /**
- * Plays berlin-1 (content: back/src/main/resources/content/lessons/berlin-1.json): the first scene as video, then,
- * as soon as the second scene starts, the transcript instead, and the rest of the lesson as text. Steps are recognised
+ * Plays berlin-1 (content: back/src/main/resources/content/lessons/berlin-1.json): the first scene as video, the
+ * second one skipped as soon as it starts, then the exercises. Steps are recognised
  * by their testIDs and quiz answers come from the lesson file, so the order of the beats can change. In Myth or fact,
  * once every card is sorted, `glossary` (a word underlined in the explanation) opens in the glossary for a second.
  * `onPractice` runs as the first exercise (the basket slider) shows, `onCheckpoints` as the first checkpoint shows,
@@ -233,10 +248,10 @@ export async function playLesson(
   { glossary, onPractice, onCheckpoints }: { glossary: string; onPractice: () => Promise<void>; onCheckpoints: () => Promise<void> },
 ): Promise<boolean> {
   await expect(page.getByTestId('video-lesson')).toBeVisible({ timeout: 20_000 });
-  // The first scene plays to its end; the transcript replaces the second one and the lesson stays in reading mode.
+  // The first scene plays to its end; the second one is skipped as soon as it starts, straight to the exercises.
   await expect(page.getByTestId('scene-caption')).toContainText(LESSON.secondScene, { timeout: 60_000 });
-  await tap(page, 'lesson-transcript', 0);
-  await expect(page.getByTestId('lesson-watch')).toBeVisible();
+  await tap(page, 'scene-skip', 0);
+  await expect(page.getByTestId('scene-player')).toBeHidden({ timeout: 20_000 });
 
   const end = page.getByTestId('lesson-end');
   const step = (id: string) => visible(page, id);
@@ -318,24 +333,20 @@ export async function playLesson(
   return glossaryOpened;
 }
 
-/**
- * The duel's categories, which are learning-path areas: Saving (Berlin, finished by then, and Nairobi) and Risk
- * (Seoul, where only the first mission is open).
- */
+/** The duel's categories, which are learning-path areas: Saving (Berlin, finished by then, and Nairobi) and Risk (Seoul). */
 export const DUEL_AREAS = ['saving', 'risk'];
 /** The stories whose question banks those areas draw from (V26__duel_v4_areas.sql). */
 const DUEL_STORIES = ['berlin', 'nairobi', 'seoul'];
 
 /**
  * Plays a duel's questions, whatever their order (content: back/src/main/resources/content/duel/). Alex gets
- * everything right except two on purpose, so the review shows both kinds of link: the first Berlin question (its
- * mission is done, so it opens) and the first Seoul question past seoul-1 (its mission is still locked). A match draws
- * 3 questions per area and only 3 of Seoul's 15 are on seoul-1, so such a question almost always comes up.
+ * everything right except the first Berlin question, on purpose, so the review links to its mission (done, so it
+ * opens). Returns that question's 0-based number.
  */
-export async function playDuel(page: Page): Promise<{ open: number; locked: number }> {
+export async function playDuel(page: Page): Promise<number> {
   const questions = loadDuelQuestions(DUEL_STORIES);
-  /** The 0-based numbers of the questions missed on purpose; -1 until it happens. */
-  const missed = { open: -1, locked: -1 };
+  /** The 0-based number of the question missed on purpose; -1 until it happens. */
+  let missed = -1;
   const question = page.getByTestId('duel-question');
   const feedback = page.getByTestId('duel-feedback');
   const result = page.getByTestId('duel-result');
@@ -348,17 +359,15 @@ export async function playDuel(page: Page): Promise<{ open: number; locked: numb
     const q = findQuestion(questions, await question.innerText());
     await beat(page, 2500); // reading the question
 
-    const missOpen = q.story === 'berlin' && missed.open < 0;
-    const missLocked = q.story === 'seoul' && q.lessonId !== 'seoul-1' && missed.locked < 0;
-    if (missOpen) missed.open = n;
-    if (missLocked) missed.locked = n;
-    await answer(page, q, missOpen || missLocked);
+    const miss = q.story === 'berlin' && missed < 0;
+    if (miss) missed = n;
+    await answer(page, q, miss);
 
     // The app shows the feedback and moves on by itself after 3 s (FEEDBACK_AUTO_ADVANCE_MS in useDuelMatch.ts).
     await expect(feedback).toBeVisible({ timeout: 20_000 });
     await expect(feedback).toBeHidden({ timeout: 20_000 });
   }
-  expect(Math.min(missed.open, missed.locked), 'the duel had no question for one of the planned mistakes').toBeGreaterThanOrEqual(0);
+  expect(missed, 'the duel had no Berlin question to miss').toBeGreaterThanOrEqual(0);
   return missed;
 }
 

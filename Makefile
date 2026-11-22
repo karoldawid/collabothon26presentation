@@ -48,8 +48,8 @@ test: check
 e2e: ## End-to-end tests in Chromium (reuses a running backend/app). Resets demo-user's onboarding
 	cd front && npx playwright install chromium && npx playwright test
 
-record: ## Demo take "Berlin, from first lesson to first step" (bank notification → onboarding → lesson → bank offers → duel → review → ranking), clips + one film in front/recordings/out/berlin/. Reuses a running make dev; resets demo-user's onboarding and lesson progress
+record: db ## Demo take "Berlin, from first lesson to first step" (bank notification → onboarding → lesson → bank offers → duel → review → ranking), clips + one film in front/recordings/out/berlin/. Starts the dev backend with a 5 s rival search, or reuses a running make dev (15 s search); resets demo-user's onboarding and lesson progress
 	cd front && npx playwright install chromium && npx playwright test -c playwright.record.config.ts berlin-first-step --grep @take
 
-record-duel: ## Only the duel clips of the demo take (11-duel, 12-duel-review), copied into presentation/clips/. Reuses a running make dev; resets demo-user's onboarding and lesson progress
+record-duel: db ## Only the duel clips of the demo take (11-duel, 12-duel-review), copied into presentation/clips/. Reuses a running make dev; resets demo-user's onboarding and lesson progress
 	cd front && npx playwright install chromium && npx playwright test -c playwright.record.config.ts berlin-first-step --grep @duel

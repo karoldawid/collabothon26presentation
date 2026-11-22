@@ -6,6 +6,22 @@ const WEB_URL = `http://localhost:${WEB_PORT}`;
 const BACKEND_PORT = Number(process.env.BACKEND_PORT ?? 8080);
 const BACKEND_URL = process.env.BACKEND_URL ?? `http://localhost:${BACKEND_PORT}`;
 
+/** The backend for the specs; `make record` runs its own variant (playwright.record.config.ts). */
+export const BACKEND_SERVER = {
+  command: './mvnw spring-boot:test-run',
+  cwd: '../back',
+  url: `${BACKEND_URL}/actuator/health`,
+  timeout: 300_000,
+  reuseExistingServer: !process.env.CI,
+};
+
+export const WEB_SERVER = {
+  command: `npx expo start --web --localhost --port ${WEB_PORT}`,
+  url: WEB_URL,
+  timeout: 120_000,
+  reuseExistingServer: !process.env.CI,
+};
+
 /**
  * End-to-end tests: the web build of the app in Chromium against the real backend.
  * Locally a running backend and Expo web server (e.g. from `make dev`) are reused; otherwise the
@@ -29,19 +45,5 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   // Metro bundles on the first request and proxies /api/* to the backend (metro.config.js).
-  webServer: [
-    {
-      command: './mvnw spring-boot:test-run',
-      cwd: '../back',
-      url: `${BACKEND_URL}/actuator/health`,
-      timeout: 300_000,
-      reuseExistingServer: !process.env.CI,
-    },
-    {
-      command: `npx expo start --web --localhost --port ${WEB_PORT}`,
-      url: WEB_URL,
-      timeout: 120_000,
-      reuseExistingServer: !process.env.CI,
-    },
-  ],
+  webServer: [BACKEND_SERVER, WEB_SERVER],
 });

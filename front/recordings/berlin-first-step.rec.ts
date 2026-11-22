@@ -35,17 +35,17 @@ import {
  * 03-quick-check    The Quick check.
  * 04-learning-path  "How we see you" with the start city's route, which must be Berlin (else 02 to 04 are filmed
  *                   again).
- * 05-map-to-berlin  The globe: the "Start here" story (Berlin), its path, "Start mission", the first scene as video
- *                   and the transcript instead of the second one.
+ * 05-map-to-berlin  The globe: the plane lands on Berlin, the "Start here" story, its path, "Start mission", the
+ *                   first scene as video; the second one is skipped.
  * 06-lesson-start   The basket slider, Myth or fact with a glossary word opened, the challenge question.
  * 07-lesson-yours   The checkpoints, his own accounts, his own basket.
  * 08-lesson-end     "Lesson complete" and the XP, back to the path, slowly down to the missions ahead.
  *  -  (off camera) The other four Berlin missions are finished, as if played in between.
  * 09-first-step     "Take the first step": the recap, the bank's products, the fixed-term deposit picked.
  * 10-deposit        The deposit lit in the bank, its terms, then the bank's main screen.
- * 11-duel           A duel on Berlin and Seoul against a rival, won with two mistakes.
- * 12-duel-review    The review: the Berlin mistake opens its mission (done), the Seoul one a mission still locked;
- *                   then the duel lobby and the weekly ranking.
+ * 11-duel           A duel on Saving and Risk against a rival, won with one mistake.
+ * 12-duel-review    The review: the Berlin mistake opens its mission (done); then the duel lobby and the weekly
+ *                   ranking.
  *
  * Output in recordings/out/berlin/ (the clips and all of them in one berlin-first-step.mp4). A take that passes also
  * copies the clips into presentation/clips/, where the deck plays them.
@@ -65,6 +65,10 @@ const MAX_ONBOARDING_TAKES = 3;
 const RECORDING_DEVICE_ID = 'demo-recording';
 /** How long the result screen may take to show the level-up overlay (ResultView: the XP bars, then a gap). */
 const LEVEL_UP_WAIT_MS = 10_000;
+/** After the duel, down to the answers faster than the reading speed of other scrolls. */
+const REVIEW_SCROLL_PX_PER_S = 700;
+/** The plane's arrival on the globe after the summary: its delay, flight and touchdown ripple (globeConfig.ts). */
+const ARRIVAL_TOTAL_MS = 500 + 2800 + 900;
 
 let clips: ClipRecorder | undefined;
 
@@ -175,11 +179,11 @@ async function openMistake(page: Page, index: number) {
 }
 
 /**
- * Clips 11 and 12, from the bank's main screen: back to Atlas, a duel on Saving and Risk against a rival with two
- * mistakes on purpose (see playDuel), the review of both mistakes, the duel lobby and the weekly ranking.
+ * Clips 11 and 12, from the bank's main screen: back to Atlas, a duel on Saving and Risk against a rival with one
+ * mistake on purpose (see playDuel), the review of that mistake, the duel lobby and the weekly ranking.
  */
 async function filmDuel(page: Page, rec: ClipRecorder) {
-  // 11. Back to Atlas, a duel on Saving and Risk against a rival, two mistakes on purpose (see playDuel).
+  // 11. Back to Atlas, a duel on Saving and Risk against a rival, one mistake on purpose (see playDuel).
   await rec.start('11-duel');
   await tap(page, 'nav-learn', 800);
   await waitForGlobe(page);
@@ -189,7 +193,7 @@ async function filmDuel(page: Page, rec: ClipRecorder) {
   await pickCategories(page, DUEL_AREAS);
   await tap(page, 'duel-mode-human', 700);
   await tap(page, 'duel-start-cta', 1000);
-  const mistakes = await playDuel(page);
+  const mistake = await playDuel(page);
   await expect(page.getByTestId('duel-result')).toBeVisible({ timeout: 120_000 });
   await beat(page, 4000); // the win, the score and XP
   // A category that levelled up gets an overlay once the XP bars have filled (a few seconds after the result shows).
@@ -204,26 +208,17 @@ async function filmDuel(page: Page, rec: ClipRecorder) {
   }
   await beat(page, 1500);
 
-  // 12. The review: slowly down to the mistakes, then each one's mission: Berlin's is done, Seoul's still locked.
+  // 12. The review: quickly down to the answers, then the mistake's mission (done, on Berlin's line).
   // Then back to the duel lobby and the weekly ranking.
   await rec.start('12-duel-review');
-  await glide(page, page.getByTestId('review-title'));
+  await glide(page, page.getByTestId('review-title'), 'center', REVIEW_SCROLL_PX_PER_S);
+  await beat(page, 1000);
+  await openWrongAnswers(page, mistake);
   await beat(page, 1500);
-  await openWrongAnswers(page, mistakes.open);
-  await beat(page, 1500);
-  await openMistake(page, mistakes.open);
+  await openMistake(page, mistake);
   // The path loads before its stops show; the pause starts once they are there.
   await expect(page.locator('[data-testid^="lesson-berlin-"]').filter({ visible: true }).first()).toBeVisible({ timeout: 20_000 });
   await beat(page, 4000); // the lesson, highlighted on Berlin's line
-  await page.goBack();
-  await expect(page.getByTestId('duel-result')).toBeVisible();
-  await beat(page, 1500);
-  await openWrongAnswers(page, mistakes.locked);
-  await openMistake(page, mistakes.locked);
-  await expect(page.getByTestId('story-locked-sheet')).toBeVisible({ timeout: 20_000 });
-  await beat(page, 4500); // "lesson locked" and which lesson opens it
-  await tap(page, 'story-locked-close', 600);
-  await beat(page, 1500);
   await page.goBack();
   await expect(page.getByTestId('duel-result')).toBeVisible();
   await beat(page, 1000);
@@ -284,9 +279,13 @@ test('Berlin: from the bank notification to the first step, a duel and the ranki
   await rec.stop();
 
   // 05. The globe, filmed once it is drawn (the first WebGL frame takes a few seconds): the "Start here" story,
-  // which must be Berlin, its path, the first lesson's "Start mission", the video, then the transcript.
+  // which must be Berlin, its path, the first lesson's "Start mission", the first scene of the video.
   await waitForGlobe(page);
   await rec.start('05-map-to-berlin');
+  // The plane flies in from the summary and lands on Berlin; a tap during the flight would cut it short. The pin's
+  // callout opens once it has touched down (Globe.tsx: arrive()), and never sooner than the arrival takes.
+  await page.waitForTimeout(ARRIVAL_TOTAL_MS);
+  await expect(page.getByTestId('pin-callout')).toBeVisible({ timeout: 20_000 });
   await beat(page, 2500);
   await expect(page.getByTestId('story-card-berlin').getByTestId('story-card-start-here')).toBeVisible();
   await tap(page, 'story-card-berlin', 800);
