@@ -12,8 +12,8 @@ Open `atlas-pitch.html` in Chrome or Edge and press F11. It needs no network and
 
 | Action | Keys |
 |---|---|
-| Next (click steps first, then the next stop) | → · space · PageDown · a clicker · a click on the slide |
-| Back | ← |
+| Next stop | → · space · PageDown · a clicker · a click on the slide |
+| Previous stop (with all its steps shown) | ← |
 | First / last stop | Home / End |
 
 To send the deck, zip the whole `presentation/` folder: the recordings sit next to the HTML, not inside it.
@@ -27,7 +27,7 @@ They live in `clips/` with the names listed in [`clips/README.txt`](clips/README
 ## Edit
 
 1. Change `src/atlas-pitch.html`. Each stop is one `<section class="stop">` with its city, lat/lng, colour, and callout title (`data-title`).
-2. Mark click steps with `data-step="1"`, `"2"` and so on. Add `data-clip` to a step to swap the phone recording.
+2. Mark steps with `data-step="1"`, `"2"` and so on. They show by themselves, in order: a step with `data-clip` (it swaps the phone recording) once the current recording has ended, any other step 3.5 s after the one before (`STEP_MS`). A click always goes to the next stop.
 3. Rebuild the offline file:
 
    ```bash

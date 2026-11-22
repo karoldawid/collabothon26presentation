@@ -78,7 +78,7 @@ body { margin: 0; background: var(--petrol); color: var(--ink); font-family: var
 @keyframes rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
 @keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
 
-/* Click steps: hidden ones keep their space, so nothing jumps when they appear. */
+/* Steps (they show by themselves): hidden ones keep their space, so nothing jumps when they appear. */
 [data-step] { transition: opacity 420ms ease, transform 420ms cubic-bezier(.2, .8, .2, 1); }
 [data-step].pending { opacity: 0; transform: translateY(12px); pointer-events: none; }
 
@@ -452,6 +452,10 @@ body { margin: 0; background: var(--petrol); color: var(--ink); font-family: var
   };
   const CLIP_DIR = 'clips/';
   const TRAVEL_MS = 1900;
+  /* Steps show by themselves: a step that swaps the recording waits for the current one to end, any other step
+     follows the previous one after STEP_MS. A click always goes to the next stop. */
+  const STEP_MS = 3500;
+  const AFTER_CLIP_MS = 600;
 
   const stage = document.getElementById('stage');
   const canvas = document.getElementById('globe');
@@ -488,8 +492,8 @@ body { margin: 0; background: var(--petrol); color: var(--ink); font-family: var
     s.phone.addEventListener('click', replay);
     s.phone.addEventListener('keydown', (e) => { if (e.key === 'Enter') replay(e); });
     const video = s.phone.querySelector('video');
-    video.addEventListener('ended', updateCue);
-    video.addEventListener('play', updateCue);
+    video.addEventListener('ended', () => clipDone(s.phone));
+    video.addEventListener('play', () => { s.phone.dataset.done = '0'; updateCue(); });
   }
 
   /* The arrow on the right: on once the recording the current step shows has played to its end. */
@@ -501,9 +505,16 @@ body { margin: 0; background: var(--petrol); color: var(--ink); font-family: var
   document.body.append(cue);
 
   function updateCue() {
-    const phone = stops[stopIndex] && stops[stopIndex].phone;
-    const video = phone && phone.querySelector('video');
-    cue.classList.toggle('on', !!video && phone.dataset.ready === '1' && video.ended);
+    const stop = stops[stopIndex];
+    const phone = stop && stop.phone;
+    cue.classList.toggle('on', !!phone && phone.dataset.done === '1' && stepIndex === stop.steps - 1);
+  }
+
+  /* The recording played to its end, or there is none to play: the arrow, and the step waiting for it. */
+  function clipDone(phone) {
+    phone.dataset.done = '1';
+    updateCue();
+    if (phone === stops[stopIndex].phone) scheduleStep();
   }
 
   function setClip(phone, name, autoplay) {
@@ -512,13 +523,14 @@ body { margin: 0; background: var(--petrol); color: var(--ink); font-family: var
     if (phone.dataset.current === name) return;
     phone.dataset.current = name;
     phone.dataset.ready = '0';
+    phone.dataset.done = '0';
     phone.dataset.want = autoplay ? '1' : '0';
     phone.classList.add('empty');
     phone.querySelector('.phone-file').textContent = `${name}.mp4`;
     phone.querySelector('.phone-what').textContent = CLIP_INFO[name] || '';
     const attempt = (exts) => {
       if (phone.dataset.current !== name) return;
-      if (!exts.length) { video.removeAttribute('src'); return; } // stays a labelled placeholder
+      if (!exts.length) { video.removeAttribute('src'); clipDone(phone); return; } // stays a labelled placeholder
       video.onerror = () => attempt(exts.slice(1));
       video.onloadeddata = () => {
         if (phone.dataset.current !== name) return;
@@ -776,6 +788,7 @@ body { margin: 0; background: var(--petrol); color: var(--ink); font-family: var
     const from = stops[prev];
     const to = stops[next];
     const firstShow = instant;
+    clearTimeout(stepTimer);
     stopIndex = next;
     stepIndex = Math.min(step, to.steps - 1);
     try { history.replaceState(null, '', `#stop-${next + 1}`); } catch (e) { /* the frame may refuse */ }
@@ -830,25 +843,37 @@ body { margin: 0; background: var(--petrol); color: var(--ink); font-family: var
       }
       if (to.phone && !firstShow) playClip(to.phone, true);
       else if (to.phone) to.phone.dataset.want = '1';
+      scheduleStep();
     };
     raf = requestAnimationFrame(frame);
   }
 
-  function setStep(k) {
+  /* The next step of the current stop, once it is due (see STEP_MS). Runs on arrival and after every step. */
+  let stepTimer = 0;
+  function scheduleStep() {
+    clearTimeout(stepTimer);
     const stop = stops[stopIndex];
-    stepIndex = k;
-    applySteps(stop, true);
+    if (flying || stepIndex >= stop.steps - 1) return;
+    const phone = stop.phone;
+    const swapsClip = phone && clipFor(stop, stepIndex + 1) !== phone.dataset.current;
+    if (!swapsClip) stepTimer = setTimeout(advanceStep, STEP_MS);
+    else if (phone.dataset.done === '1') stepTimer = setTimeout(advanceStep, phone.dataset.ready === '1' ? AFTER_CLIP_MS : STEP_MS);
+    // otherwise clipDone() calls again when the recording ends
+  }
+
+  function advanceStep() {
+    stepIndex += 1;
+    applySteps(stops[stopIndex], true);
+    scheduleStep();
   }
 
   function next() {
-    const stop = stops[stopIndex];
-    if (stepIndex < stop.steps - 1) setStep(stepIndex + 1);
-    else goToStop(stopIndex + 1);
+    goToStop(stopIndex + 1);
   }
 
+  /* The previous stop as it ended, every step shown. */
   function back() {
-    if (stepIndex > 0) setStep(stepIndex - 1);
-    else if (stopIndex > 0) goToStop(stopIndex - 1, stops[stopIndex - 1].steps - 1);
+    if (stopIndex > 0) goToStop(stopIndex - 1, stops[stopIndex - 1].steps - 1);
   }
 
   document.addEventListener('keydown', (e) => {

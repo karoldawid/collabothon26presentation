@@ -33,7 +33,8 @@ import {
  * 01-bank-nudge     The bank: Atlas's notification shows, runs out and drops into the Learn button.
  * 02-onboarding     Atlas's intro slides, the consent, what the money is for and when.
  * 03-quick-check    The Quick check.
- * 04-learning-path  "How we see you", which must start in Berlin (else 02 to 04 are filmed again).
+ * 04-learning-path  "How we see you" with the start city's route, which must be Berlin (else 02 to 04 are filmed
+ *                   again).
  * 05-map-to-berlin  The globe: the "Start here" story (Berlin), its path, "Start mission", the first scene as video
  *                   and the transcript instead of the second one.
  * 06-lesson-start   The basket slider, Myth or fact with a glossary word opened, the challenge question.
@@ -137,14 +138,17 @@ async function onboard(page: Page, rec: ClipRecorder): Promise<boolean> {
   await answer(`quick-check-option-${correctOption(ORDER[1])}`);
   await answer('quick-check-unsure');
 
-  // "How we see you": the level, then slowly down to the first stop.
+  // "How we see you": the level, then slowly down to the first stop of the start city's route.
   await expect(page.getByTestId('learning-path')).toBeVisible({ timeout: 30_000 });
+  // The route replaces the plain first-stop card once the stories have loaded; film it, not the card.
+  const route = page.getByTestId('summary-route');
+  await expect(route).toBeVisible({ timeout: 20_000 });
   await rec.start('04-learning-path');
   await beat(page, 3000);
-  const first = page.getByTestId('summary-first-lesson');
-  await glide(page, first);
+  await glide(page, route.getByTestId('summary-first-lesson'));
   await beat(page, 3000);
-  return (await first.innerText()).includes('Berlin');
+  // The city is in the route's header, above its stops, as an uppercase overline (innerText reads it as BERLIN).
+  return /berlin/i.test(await route.innerText());
 }
 
 /** Leaves exactly `areas` ticked in the duel lobby: the others off first, since at most 4 can be ticked. */
